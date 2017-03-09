@@ -1,27 +1,73 @@
 package edu.elevator.system
 
 import edu.elevator.Contract.Direction.{Down, Up}
-import edu.elevator.Contract.Elevator._
-import edu.elevator.Contract.{Direction, Elevator, Floor, Subscription}
+import edu.elevator.Contract.ElevatorControls._
+import edu.elevator.Contract._
 import edu.elevator.system.InternalContract.{Call, Stop, Task}
 
-case class InnerElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxFloor: Int, startFloor: Int, startStatus: Status) extends Elevator {
+import scala.collection.mutable
+
+case class InternalElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxFloor: Int, startFloor: Int, startStatus: Status) /*extends Elevator*/ {
   private val plan: Array[Set[Task]] = Array.fill(dispatcher.numberOfFloors){Set.empty[Task]}
+  private val waiting: mutable.Set[InternalSubscription] = mutable.Set.empty[InternalSubscription]
+  private val moving: mutable.Set[InternalSubscription] = mutable.Set.empty[InternalSubscription]
   private var currentFloor: Int = startFloor
   private var currentStatus: Status = startStatus
 
-  override def floor: Floor = Floor(currentFloor)
-  override def status: Status = currentStatus
-  override def push(floor: Floor): Unit = ()
+  def floor: Int = currentFloor
+  def status: Status = currentStatus
 
-  def accept(call: Call, subscription: InnerSubscription): Unit = {
-    val f = call.floor.level - minFloor
-    plan.update(f, plan(f) + Task(call, subscription))
+  def enter(subscription: InternalSubscription): Boolean = {
+    val call = plan.flatten.filter(_ match {
+      case Task(Call(Floor(f), _), s) => (s.requestId == subscription.requestId) && (f == currentFloor)
+      case _ => false
+    })
+    call.headOption
+      .map(c => {
+        moving += subscription
+        waiting -= subscription
+      })
+      .nonEmpty
   }
 
-  def accept(stop: Stop, subscription: InnerSubscription): Unit = {
-    val f = stop.floor.level - minFloor
-    plan.update(f, plan(f) + Task(stop, subscription))
+  def leave(subscription: InternalSubscription): Boolean = {
+    val matched: List[Stop] = plan.flatten.toList collect {
+      case Task(stop @ Stop(Floor(f), elevatorId), s)
+        if (s.requestId == subscription.requestId) =>
+          stop
+    }
+    matched.foreach(_ match {
+      case Stop(Floor(f), _) =>
+        val idx = f - minFloor
+        val before = plan(idx)
+        val after = before.filter(_ match {
+          case Task(Stop(Floor(_), _), s) => s.requestId != subscription.requestId
+          case _ => true
+        })
+        plan.update(idx, after)
+        before.foreach(_ match {
+          case Task(Stop(Floor(_), _), s) if s.requestId == subscription.requestId =>
+            s.exit()
+            moving -= s
+          case _ =>
+        })
+    })
+    matched.nonEmpty
+  }
+
+  def accept(call: Call, subscription: InternalSubscription): Unit = {
+    val f = call.floor.level - minFloor
+    plan.update(f, plan(f) + Task(call, subscription))
+    waiting += subscription
+  }
+
+  def accept(stop: Stop, subscription: InternalSubscription): Unit = {
+    if (moving(subscription)) {
+      val f = stop.floor.level - minFloor
+      plan.update(f, plan(f) + Task(stop, subscription))
+    } else {
+      throw new IllegalStateException("Can't request stop before entering the elevator")
+    }
   }
 
   def cancel(subscription: Subscription): Boolean = {
@@ -51,7 +97,7 @@ case class InnerElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxFloo
       case Task(Stop(_, _), _) => true
       case Task(Call(_, _), _) => false
     })
-    stops.map(_.subscription).foreach(_.exit())
+    stops.map(_.subscription).foreach(_.stop())
     val picks =
       if (currentFloor == minFloor || currentFloor == maxFloor) calls
       else {
@@ -71,14 +117,12 @@ case class InnerElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxFloo
           case _ => calls
         }
       }
+    plan.update(idx, plan(idx) -- stops)
     picks.map(_.subscription).foreach(_.pick())
     plan.update(idx, plan(idx) -- stops -- picks)
 
-    val all = plan.flatten.toSet -- stops -- picks
-    all.foreach(_ match {
-      case Task(Stop(_, _), s) => s.move()
-      case Task(Call(_, _), s) => s.tick()
-    })
+    waiting.foreach(_.tick())
+    moving.foreach(_.move())
   }
 
   def check(): Unit = {
@@ -107,19 +151,22 @@ case class InnerElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxFloo
   }
 
   def hasTasks(): Boolean = plan.exists(_.nonEmpty)
+  def nonEmpty(): Boolean = waiting.nonEmpty || moving.nonEmpty
 
-  def report(reporter: InnerElevator.Reporter): Unit = {
+  def getQueueSize(): Int = waiting.size + moving.size
+
+  def report(reporter: InternalElevator.Reporter): String = {
     reporter.report(id, currentFloor, currentStatus, plan.toList)
   }
 }
 
-object InnerElevator {
+object InternalElevator {
   trait Reporter {
-    def report(id: Int, floor: Int, status: Elevator.Status, queue: List[Set[Task]]): Unit
+    def report(id: Int, floor: Int, status: ElevatorControls.Status, queue: List[Set[Task]]): String
   }
 
   object ConsoleReporter extends Reporter {
-    override def report(id: Int, floor: Int, status: Status, queue: List[Set[Task]]): Unit = {
+    override def report(id: Int, floor: Int, status: Status, queue: List[Set[Task]]): String = {
       val statusString = status match {
         case Moving(Up) => "up"
         case Moving(Down) => "down"
@@ -129,13 +176,13 @@ object InnerElevator {
       val queueString = queue.zipWithIndex.map {
         case (set, idx) =>
           val str = set.map({
-            case Task(Call(Floor(f), Direction.Up), s) => s"U_${f}_${s.requestId}"
-            case Task(Call(Floor(f), Direction.Down), s) => s"D_${f}_${s.requestId}"
-            case Task(Stop(Floor(f), _), s) => s"S_${f}_${s.requestId}"
+            case Task(Call(Floor(f), Direction.Up), s) => s"(${s.requestId}) ${f} up"
+            case Task(Call(Floor(f), Direction.Down), s) => s"(${s.requestId}) ${f} down"
+            case Task(Stop(Floor(f), _), s) => s"(${s.requestId}) ${f} stop"
           }).mkString("[", ",", "]")
           s"$idx: $str"
       }
-      println(s"Elevator: id=$id floor=$floor status=$statusString queue=$queueString")
+      s"Elevator: id=$id floor=$floor status=$statusString queue=$queueString"
     }
   }
 }

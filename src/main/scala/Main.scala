@@ -13,28 +13,31 @@ object Main extends App {
   val goto = (tag: String, target: Floor) => {
     var waits = 0
     var moves = 0
-    (event: Event, elevator: Elevator) =>
+    (event: Event, elevator: ElevatorControls) =>
       event match {
         case Wait =>
           waits += 1
-        //println(tag + ": " + "waiting... elevator is on floor " + elevator.floor)
+          println(tag + ": " + "waiting... elevator is on floor " + elevator.floor)
         case Pick =>
           println(tag + ": " + "get into elevator on floor " + elevator.floor + " and push " + target)
-          elevator.push(target)
+          elevator.enter()
+          //elevator.push(target)
         case Move =>
           moves += 1
-        //println(tag + ": " + "riding in the elevator on floor " + elevator.floor)
+          if (moves > 20) elevator.push(target)
+          println(tag + ": " + "riding in the elevator on floor " + elevator.floor)
+        case Stop =>
+          println(tag + ": " + "stopped on my request at floor " + elevator.floor)
+          elevator.leave()
         case Exit =>
-          println(tag + ": " + "leaving elevator on floor " + elevator.floor)
-          println(tag + ": " + "summary: waits=" + waits + " moves=" + moves)
-        case _ =>
+          println(tag + ": " + "leaving elevator on floor " + elevator.floor + ", summary: waits=" + waits + " moves=" + moves)
       }
     }
 
   system.call(Floor(MinFloor), Direction.Up).onStateChange(goto("001", Floor(MaxFloor)))
   system.call(Floor(MaxFloor), Direction.Down).onStateChange(goto("002", Floor(MinFloor)))
-  system.call(Floor(0), Direction.Up).onStateChange(goto("003", Floor(5)))
-  system.call(Floor(7), Direction.Down).onStateChange(goto("004", Floor(2)))
+  system.call(Floor(MinFloor+2), Direction.Up).onStateChange(goto("003", Floor(MaxFloor-2)))
+  system.call(Floor(MinFloor+7), Direction.Down).onStateChange(goto("004", Floor(MaxFloor-7)))
 
   system.start
   system.stop

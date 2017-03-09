@@ -10,7 +10,9 @@ class ElevatorSystem(minFloor: Int, maxFloor: Int, numberOfElevators: Int) exten
   def requestId: Long = requestIdCounter.incrementAndGet()
 
   val tickCounter: AtomicLong = new AtomicLong(0L)
-  val dispatcher: Dispatcher = Dispatcher(minFloor, maxFloor, numberOfElevators)
+  val dispatcher: Dispatcher = Dispatcher(minFloor, maxFloor, numberOfElevators, Router.ShortestQueue)
+
+  def getCurrentTick: Long = tickCounter.get()
 
   override def call(floor: Floor, direction: Direction): Subscription = {
     val request = Request(requestId, floor, direction)
@@ -27,10 +29,11 @@ class ElevatorSystem(minFloor: Int, maxFloor: Int, numberOfElevators: Int) exten
 
   override def start(): Unit = {
     while (dispatcher.hasTasks()) {
+      println(s"\nTICK: ${tickCounter.get}")
       dispatcher.move()
       tickCounter.incrementAndGet()
     }
-    println("dispatcher completed in " + tickCounter.get() + " ticks")
+    println("\ndispatcher completed in " + tickCounter.get() + " ticks")
   }
 
   override def start(n: Int): Unit = {

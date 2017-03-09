@@ -10,14 +10,16 @@ object Contract {
     case object Down extends Direction
   }
 
-  trait Elevator {
-    val id: Int
+  trait ElevatorControls {
+    val elevatorId: Int
     def floor: Floor
-    def status: Elevator.Status
+    def status: ElevatorControls.Status
     def push(floor: Floor): Unit
+    def enter(): Unit
+    def leave(): Unit
   }
 
-  object Elevator {
+  object ElevatorControls {
     sealed trait Status
     case object Stopped extends Status
     case object Waiting extends Status
@@ -29,10 +31,11 @@ object Contract {
     case object Wait extends Event
     case object Pick extends Event
     case object Move extends Event
+    case object Stop extends Event
     case object Exit extends Event
   }
 
-  type Callback = (Event, Elevator) => Unit
+  type Callback = (Event, ElevatorControls) => Unit
 
   trait Subscription {
     val requestId: Long
