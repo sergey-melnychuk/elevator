@@ -35,7 +35,7 @@ object Contract {
     case object Exit extends Event
   }
 
-  type Callback = (Event, ElevatorControls) => Unit
+  type Callback = (Event, Option[ElevatorControls]) => Unit
 
   trait Subscription {
     val requestId: Long

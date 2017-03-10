@@ -70,11 +70,12 @@ case class InternalElevator(id: Int, dispatcher: Dispatcher, minFloor: Int, maxF
     }
   }
 
-  def cancel(subscription: Subscription): Boolean = {
+  def cancel(subscription: InternalSubscription): Boolean = {
     val sizeBefore = plan.flatten.size
     plan.zipWithIndex.foreach {
       case (p, idx) =>
         plan.update(idx, p.filter(_.subscription != subscription))
+        subscription.exit()
     }
     val sizeAfter = plan.flatten.size
     sizeBefore != sizeAfter

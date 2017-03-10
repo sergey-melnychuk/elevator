@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import edu.elevator.Contract._
 import edu.elevator.Contract.ElevatorControls.Status
+import edu.elevator.Contract.Event.Wait
 import edu.elevator.system.InternalContract.Stop
 
 case class InternalSubscription(request: Request, elevatorId: Int, dispatcher: Dispatcher) extends Subscription {
@@ -16,7 +17,7 @@ case class InternalSubscription(request: Request, elevatorId: Int, dispatcher: D
 
   private def run(event: Event): Unit = {
     Option(callbackHolder.get).foreach(callback => {
-      callback.apply(event, elevator)
+      callback.apply(event, if (event == Wait) None else  Some(elevator))
     })
   }
 

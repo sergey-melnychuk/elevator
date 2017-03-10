@@ -3,7 +3,6 @@ import edu.elevator.system.ElevatorSystem
 object Main extends App {
 
   import edu.elevator.Contract._
-  import edu.elevator.Contract.Event._
 
   val MinFloor = -2
   val MaxFloor = 10
@@ -11,26 +10,28 @@ object Main extends App {
   val system = ElevatorSystem(MinFloor, MaxFloor, NumberOfElevators)
 
   val goto = (tag: String, target: Floor) => {
+    import edu.elevator.Contract.Event._
     var waits = 0
     var moves = 0
-    (event: Event, elevator: ElevatorControls) =>
+    (event: Event, elevator: Option[ElevatorControls]) =>
       event match {
         case Wait =>
           waits += 1
-          println(tag + ": " + "waiting... elevator is on floor " + elevator.floor)
+          println(tag + ": " + "waiting... elevator is on floor " + elevator.map(_.floor).getOrElse("?"))
+          elevator.foreach(_.push(Floor(-100)))
         case Pick =>
-          println(tag + ": " + "get into elevator on floor " + elevator.floor + " and push " + target)
-          elevator.enter()
-          //elevator.push(target)
+          println(tag + ": " + "get into elevator on floor " + elevator.map(_.floor).getOrElse("?") + " and push " + target)
+          elevator.foreach(_.enter())
+          elevator.foreach(_.push(Floor(-100)))
         case Move =>
           moves += 1
-          if (moves > 20) elevator.push(target)
-          println(tag + ": " + "riding in the elevator on floor " + elevator.floor)
+          if (moves > 20) elevator.foreach(_.push(target))
+          println(tag + ": " + "riding in the elevator on floor " + elevator.map(_.floor).getOrElse("?"))
         case Stop =>
-          println(tag + ": " + "stopped on my request at floor " + elevator.floor)
-          elevator.leave()
+          println(tag + ": " + "stopped on my request at floor " + elevator.map(_.floor).getOrElse("?"))
+          elevator.foreach(_.leave())
         case Exit =>
-          println(tag + ": " + "leaving elevator on floor " + elevator.floor + ", summary: waits=" + waits + " moves=" + moves)
+          println(tag + ": " + "leaving elevator on floor " + elevator.map(_.floor).getOrElse("?") + ", summary: waits=" + waits + " moves=" + moves)
       }
     }
 

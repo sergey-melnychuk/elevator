@@ -23,20 +23,20 @@ class Dispatcher(minFloor: Int, maxFloor: Int, numberOfElevators: Int, router: O
     router.map(_.route(call, elevators)).getOrElse(0)
 
   private[system] def submit(elevatorId: Int, call: Call, subscription: InternalSubscription): Unit = {
-    elevators(elevatorId).accept(call, subscription)
+    if (isValid(call)) {
+      elevators(elevatorId).accept(call, subscription)
+    }
   }
 
   private[system] def submit(stop: Stop, subscription: InternalSubscription): Unit = {
-    elevators(stop.elevatorId).accept(stop, subscription)
+    if (isValid(stop)) {
+      elevators(stop.elevatorId).accept(stop, subscription)
+    }
   }
 
   private[system] def cancel(elevatorId: Int, subscription: InternalSubscription): Boolean = {
     val elevator = elevators(elevatorId)
-    val affected = elevator.cancel(subscription)
-    if (affected) {
-      subscription.exit()
-    }
-    affected
+    elevator.cancel(subscription)
   }
 
   private[system] def leave(elevatorId: Int, subscription: InternalSubscription): Unit = {
@@ -53,6 +53,9 @@ class Dispatcher(minFloor: Int, maxFloor: Int, numberOfElevators: Int, router: O
     submit(elevatorId, Call(request.floor, request.direction), subscription)
     subscription
   }
+
+  private def isValid(call: Call): Boolean = (call.floor.level >= minFloor) && (call.floor.level <= maxFloor)
+  private def isValid(stop: Stop): Boolean = (stop.floor.level >= minFloor) && (stop.floor.level <= maxFloor)
 
   def hasTasks(): Boolean = elevators.exists(e => e.hasTasks() || e.nonEmpty())
 
